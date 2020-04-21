@@ -69,7 +69,7 @@ func (spanner *CoocSpanner) PMI() (A *sparse.DOK) {
 	return
 }
 
-func (spanner *CoocSpanner) PPMI() (A *sparse.DOK) {
+func (spanner *CoocSpanner) SPMI() (A *sparse.DOK) {
 	n := len(spanner.Vocab)
 	A = sparse.NewDOK(n, n)
 	for t := range spanner.Dict {
@@ -86,38 +86,30 @@ func (spanner *CoocSpanner) PPMI() (A *sparse.DOK) {
 }
 
 func (spanner *CoocSpanner) TextRank(e, d float64) []float64 {
-	A := spanner.PMI().ToCSR()
 	if d < 0 || d > 1 {
 		d = 0.15
 	}
 	if e < 0 || e > 1 {
 		e = 1e-3
 	}
-	k, rowc := A.Dims()
-	if rowc != k {
-		panic("dimension mismatch")
-	}
-	for i := 0; i < k; i++ {
-		v := A.RowView(i)
-		n := mat.Sum(v)
-		if n == 0 {
-			n = 1
-		} else {
-			n = 1 / n
-		}
-		for j := 0; j < v.Len(); j++ {
-			A.Set(i, j, v.AtVec(j)*n)
-		}
-	}
-	n := float64(k)
+	A := spanner.PMI()
+	n, _ := A.Dims()
+	A_hat := mat.NewDense(n, n, make([]float64, n*n))
+	rowSums := make([]float64, n)
 	A.DoNonZero(func(i, j int, x float64) {
-		x *= (1 - d)
-		x += d / n
-		A.Set(i, j, x)
+		rowSums[i] += x
 	})
-	v := mat.NewDense(k, 1, make([]float64, k))
+	A.DoNonZero(func(i, j int, x float64) {
+		A_hat.Set(i, j, x/rowSums[i])
+	})
+	A_hat.Apply(func(i, j int, x float64) float64 {
+		x *= (1 - d)
+		x += d / float64(n)
+		return x
+	}, A_hat)
+	v := mat.NewDense(n, 1, make([]float64, n))
 	v.Apply(func(i, j int, x float64) float64 {
-		return rand.Float64() / n
+		return rand.Float64() / float64(n)
 	}, v)
 	for {
 		u := mat.DenseCopyOf(v)
@@ -138,9 +130,9 @@ type RakeSpanner struct {
 	Vocab
 	Stops    BOW
 	Phrases  [][]string
+	phrase   []string
 	Adjoined map[[3]string]float64
 	OOV      map[string]*Oneshot
-	phrase   []string
 }
 
 func NewRakeSpanner(span int, vocab Vocab, lexer Lexer, stops []string) *RakeSpanner {
@@ -162,6 +154,7 @@ type Phrase []string
 func (phrase Phrase) Append(t string) {
 	if phrase == nil {
 		phrase = []string{t}
+		return
 	}
 	phrase = append(phrase, t)
 }
@@ -227,7 +220,7 @@ type ScoredPhrase struct {
 func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
 	rankVec := spanner.TextRank(1e-3, 0.15)
 	rankDict := make(map[string]float64, len(rankVec))
-	ppmi := spanner.PPMI()
+	spmi := spanner.SPMI()
 	for i, t := range spanner.CoocSpanner.Vocab {
 		rankDict[t] = rankVec[i]
 	}
@@ -243,7 +236,7 @@ func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
 			i := spanner.Dict[t]
 			for _, w := range phrase[1:] {
 				j := spanner.Dict[w]
-				score += ppmi.At(i, j)
+				score += spmi.At(i, j)
 			}
 		}
 		if len(phrase) > 1 {
