@@ -60,8 +60,11 @@ func (spanner *CoocSpanner) PMI() (A *sparse.DOK) {
 		for w := range spanner.Dict {
 			k := fmt.Sprintf("%s/%s", t, w)
 			x := spanner.Coocs.Get(k)
+			if x == 0 {
+				continue
+			}
 			f := spanner.Freqs[t] + spanner.Freqs[w]
-			x = math.Log((f - x) / x)
+			x /= f
 			i, j := spanner.Dict[t], spanner.Dict[w]
 			A.Set(i, j, x)
 		}
@@ -77,7 +80,7 @@ func (spanner *CoocSpanner) SPMI() (A *sparse.DOK) {
 			k := fmt.Sprintf("%s/%s", t, w)
 			x := spanner.Succs.Get(k)
 			f := spanner.Freqs[t] + spanner.Freqs[w]
-			x = math.Log((f - x) / x)
+			x /= f
 			i, j := spanner.Dict[t], spanner.Dict[w]
 			A.Set(i, j, x)
 		}
@@ -94,12 +97,15 @@ func (spanner *CoocSpanner) TextRank(e, d float64) []float64 {
 	}
 	A := spanner.PMI()
 	n, _ := A.Dims()
-	A_hat := mat.NewDense(n, n, make([]float64, n*n))
 	rowSums := make([]float64, n)
 	A.DoNonZero(func(i, j int, x float64) {
 		rowSums[i] += x
 	})
+	A_hat := mat.NewDense(n, n, make([]float64, n*n))
 	A.DoNonZero(func(i, j int, x float64) {
+		if rowSums[i] == 0 {
+			return
+		}
 		A_hat.Set(i, j, x/rowSums[i])
 	})
 	A_hat.Apply(func(i, j int, x float64) float64 {
@@ -219,8 +225,10 @@ type ScoredPhrase struct {
 
 func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
 	rankVec := spanner.TextRank(1e-3, 0.15)
+	fmt.Println("TextRank computation complete")
 	rankDict := make(map[string]float64, len(rankVec))
 	spmi := spanner.SPMI()
+	fmt.Println("SPMI computation complete")
 	for i, t := range spanner.CoocSpanner.Vocab {
 		rankDict[t] = rankVec[i]
 	}
@@ -238,8 +246,6 @@ func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
 				j := spanner.Dict[w]
 				score += spmi.At(i, j)
 			}
-		}
-		if len(phrase) > 1 {
 			score /= float64(len(phrase) - 1)
 		}
 		ent := &ScoredPhrase{phrase, score}
