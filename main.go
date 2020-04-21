@@ -174,7 +174,7 @@ func main() {
 			k = len(results)
 		}
 		results = results[:k]
-		fmt.Println()
+		fmt.Printf("Found %d hit(s):\n", len(results))
 		for _, r := range results {
 			recipients := make([]string, 0, len(dmsById[r.ChID].Recipients))
 			if len(dmsById[r.ChID].Recipients) != 0 {
@@ -182,8 +182,19 @@ func main() {
 					recipients = append(recipients, u.String())
 				}
 			}
-			fmt.Printf("%s; %s\n", r.Time.Format("Jan 02 '06 15:04:05"),
-				strings.Join(recipients, ", "))
+			keyphrases := make([]string, 0, 3)
+			for i, phrase := range r.KeyPhrases {
+				s := strings.Join(phrase.Phrase, " ")
+				s = fmt.Sprintf(`"%s"`, s)
+				keyphrases = append(keyphrases, s)
+				if i >= 2 {
+					break
+				}
+			}
+			fmt.Printf("%s; %s: %s\n",
+				r.Time.Format("Jan 02 '06 15:04:05"),
+				strings.Join(recipients, ", "),
+				strings.Join(keyphrases, ", "))
 		}
 		fmt.Printf("> ")
 	}

@@ -12,14 +12,20 @@ import (
 // Vec represents a lexical embedding.
 type Vec []float32
 
-// Sim computes cosine similarity between two Vecs.
+// Sim is the cosine similarity between two word vectors. Higher is more
+// similar.
 func (v Vec) Sim(u Vec) float32 {
 	uBlas, vBlas := u.ToBlas(), v.ToBlas()
-	return blas32.Dot(uBlas, vBlas) / blas32.Nrm2(uBlas) / blas32.Nrm2(vBlas)
+	a, b := blas32.Nrm2(uBlas), blas32.Nrm2(vBlas)
+	return blas32.Dot(uBlas, vBlas) / a / b
 }
 
 func (v Vec) AtVec(i int) float64 {
 	return float64(v[i])
+}
+
+func (v Vec) Dim() int {
+	return len(v)
 }
 
 func (v Vec) Dims() (m, n int) {
@@ -46,13 +52,6 @@ type Vocab interface {
 	Len() int
 	Dim() int
 	Embed(string) Vec
-}
-
-// Jxt is the juxtaposition between two word vectors. Higher is more similar.
-func (v Vec) Jxt(u Vec) float32 {
-	uBlas, vBlas := u.ToBlas(), v.ToBlas()
-	a, b := blas32.Nrm2(uBlas), blas32.Nrm2(vBlas)
-	return blas32.Dot(uBlas, vBlas) / a / b
 }
 
 type Embeddings struct {
@@ -148,45 +147,16 @@ func (eb *Embeddings) EmbedTxt(istrm io.Reader) (err error) {
 type ALaCarte struct {
 	Vocab
 	Lexer
-	blas32.Vector
-	SampleCount int
+	Oneshot
 }
 
 func (eb *ALaCarte) Advance(t string) (p bool) {
-	p = eb.Lexer.Advance(t)
-	u := eb.Vocab.Embed(t)
-	if u == nil {
-		return
-	}
-	v := u.ToBlas()
-	if eb.Vector.Data == nil {
-		eb.Vector = make(Vec, eb.Dim()).ToBlas()
-	}
-	blas32.Axpy(1, v, eb.Vector)
-	eb.SampleCount++
-	return
+	eb.Oneshot.Add(eb.Embed(t))
+	return eb.Lexer.Advance(t)
 }
 
 func (eb *ALaCarte) Finalize() (x Vec) {
-	if eb.Vector.Data == nil {
-		eb.Vector = make(Vec, eb.Dim()).ToBlas()
-	}
-	blas32.Scal(1/float32(eb.SampleCount), eb.Vector)
-	// v := blas32.General{
-	// 	Rows: eb.Dim(), Cols: 1, // [1×n]
-	// 	Stride: 1, Data: eb.Vector.Data,
-	// }
-	A := inductionMatrix // [n×n]
-	// v = vA
-	// blas32.Gemm(blas.NoTrans, blas.NoTrans, 1, v, A, 0, v)
-	// x = Vec(v.Data)
-	v := mat.NewDense(eb.Dim(), 1, nil)
-	v.Mul(A, Vec(eb.Vector.Data))
-	x = make(Vec, eb.Dim())
-	for i := range x {
-		x[i] = float32(v.RawMatrix().Data[i])
-	}
-	eb.Vector = make(Vec, eb.Dim()).ToBlas()
-	eb.SampleCount = 0
+	x = eb.Oneshot.Finalize()
+	eb.Oneshot = Oneshot{}
 	return
 }

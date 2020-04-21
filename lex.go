@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"math"
 	"strings"
 	"unicode"
 
@@ -83,100 +82,18 @@ func (lexer *PassLex) Advance(t string) bool {
 	return true
 }
 
-type TfIdf struct {
-	tf           map[string]int
-	df           map[string]int
-	touch        map[string]struct{}
-	docs, docLen int
-}
-
-func (counter *TfIdf) Init() {
-	counter.tf = make(map[string]int, 1024)
-	counter.df = make(map[string]int, 1024)
-	counter.touch = make(map[string]struct{}, 512)
-}
-
-func (counter *TfIdf) Inc(t string) {
-	if counter.tf == nil {
-		counter.Init()
-	}
-	counter.tf[t] += 1
-	counter.touch[t] = struct{}{}
-}
-
-func (counter *TfIdf) Doc() {
-	if counter.tf == nil {
-		counter.Init()
-	}
-	counter.docs += 1
-	for t := range counter.touch {
-		counter.df[t] += 1
-	}
-	if len(counter.touch) > counter.docLen {
-		counter.docLen = len(counter.touch)
-	}
-	counter.touch = make(map[string]struct{}, 2*counter.docLen)
-}
-
-func (counter *TfIdf) Oneshot(t string) float64 {
-	if counter.docs == 0 {
-		counter.Doc()
-	}
-	if _, ok := counter.tf[t]; !ok {
-		return 0
-	}
-	tf := float64(counter.tf[t])
-	df := float64(counter.df[t])
-	d := float64(counter.docs)
-	return math.Log(tf+1) * math.Log((d-df)/df)
-}
-
-func (counter *TfIdf) Collate() map[string]float64 {
-	final := make(map[string]float64, len(counter.tf))
-	for t := range counter.tf {
-		final[t] = counter.Oneshot(t)
-	}
-	return final
-}
-
-type Doc []string
-
-type DocLexer struct {
-	Doc
-	Sanitizer
-	Cap int
-}
-
-func (lexer *DocLexer) Advance(t string) bool {
-	t = lexer.Sanitize(t)
-	if lexer.Doc == nil {
-		lexer.Doc = make(Doc, 0, 1024)
-	}
-	if lexer.Cap > 0 && len(lexer.Doc) >= lexer.Cap {
-		return false
-	}
-	lexer.Doc = append(lexer.Doc, t)
-	return true
-}
-
-func (lexer *DocLexer) Finalize() Doc {
-	doc := lexer.Doc
-	lexer.Doc = nil
-	return doc
-}
-
 type Spanner struct {
 	Lexer
 	Span    int
 	Context []string
 }
 
-func NewSpanner(n int, lexer Lexer) Spanner {
-	return Spanner{lexer, n, make([]string, n)}
+func NewSpanner(span int, lexer Lexer) *Spanner {
+	return &Spanner{lexer, span, make([]string, 0, span+1)}
 }
 
 func (spanner *Spanner) Advance(t string) bool {
-	spanner.Context = append(spanner.Context, t)
+	spanner.Context = append(spanner.Context, spanner.Sanitize(t))
 	if len(spanner.Context) > spanner.Span {
 		spanner.Context = spanner.Context[1:]
 	}

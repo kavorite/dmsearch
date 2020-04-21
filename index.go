@@ -20,6 +20,7 @@ type Prism struct {
 type Lens struct {
 	time.Time
 	Vec
+	KeyPhrases    []*ScoredPhrase
 	ChID          string
 	ContentLength int
 }
@@ -33,8 +34,9 @@ func (spl *Prism) Slide(s *dgo.Session) (distillation *Lens, err error) {
 		Vocab: spl.Vocab,
 	}
 	bytec := 0
+	spanner := NewRakeSpanner(5, &eb, &eb, nltkStops)
 	err = spl.Unroll(s, func(msg *dgo.Message) bool {
-		Lex(&eb, msg.Content)
+		Lex(spanner, msg.Content)
 		bytec += len([]byte(msg.Content))
 		msgid, _ := snowflake.Parse(msg.ID)
 		if eb.SampleCount >= spl.Width {
@@ -43,6 +45,7 @@ func (spl *Prism) Slide(s *dgo.Session) (distillation *Lens, err error) {
 				ContentLength: bytec,
 				Vec:           eb.Finalize(),
 				ChID:          msg.ChannelID,
+				KeyPhrases:    spanner.ScoredPhrases(),
 			}
 			return false
 		}
@@ -92,7 +95,7 @@ type Result struct {
 	Distance float32
 }
 
-func (index Index) Query(q string) (results []Result) {
+func (index *Index) Query(q string) (results []Result) {
 	eb := ALaCarte{
 		Vocab: index.Vocab,
 		Lexer: &PassLex{SanitizerChain{StripPunct, ToLower}},
@@ -108,7 +111,7 @@ func (index Index) Query(q string) (results []Result) {
 	return
 }
 
-func (index Index) QueryBrute(q string) (results []Result) {
+func (index *Index) QueryBrute(q string) (results []Result) {
 	eb := ALaCarte{
 		Vocab: index.Vocab,
 		Lexer: &PassLex{SanitizerChain{StripPunct, ToLower}},
