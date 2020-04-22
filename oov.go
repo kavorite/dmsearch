@@ -79,6 +79,9 @@ func (spanner *CoocSpanner) SPMI() (A *sparse.DOK) {
 		for w := range spanner.Dict {
 			k := fmt.Sprintf("%s/%s", t, w)
 			x := spanner.Succs.Get(k)
+			if x == 0 {
+				continue
+			}
 			f := spanner.Freqs[t] + spanner.Freqs[w]
 			x /= f
 			i, j := spanner.Dict[t], spanner.Dict[w]
@@ -119,7 +122,7 @@ func (spanner *CoocSpanner) TextRank(e, d float64) []float64 {
 	}, v)
 	for {
 		u := mat.DenseCopyOf(v)
-		v.Mul(A, v)
+		v.Mul(A_hat, v)
 		u.Sub(u, v)
 		u.MulElem(u, u)
 		qerr := mat.Sum(u)
@@ -225,10 +228,8 @@ type ScoredPhrase struct {
 
 func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
 	rankVec := spanner.TextRank(1e-3, 0.15)
-	fmt.Println("TextRank computation complete")
 	rankDict := make(map[string]float64, len(rankVec))
 	spmi := spanner.SPMI()
-	fmt.Println("SPMI computation complete")
 	for i, t := range spanner.CoocSpanner.Vocab {
 		rankDict[t] = rankVec[i]
 	}
