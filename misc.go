@@ -116,10 +116,8 @@ func (cma *Oneshot) Add(v Vec) (result Vec) {
 		return
 	}
 	u := cma.ToBlas()
-	blas32.Scal(float32(cma.SampleCount), u)
 	blas32.Axpy(1, u, v.ToBlas())
 	cma.SampleCount++
-	blas32.Scal(1/float32(cma.SampleCount), u)
 	result = cma.Vec
 	return
 }
@@ -129,6 +127,7 @@ func (cma *Oneshot) Finalize() (u Vec) {
 		return
 	}
 	u = make(Vec, cma.Dim())
+	blas32.Scal(1/float32(cma.SampleCount), u.ToBlas())
 	copy(u, cma.Vec)
 	v := mat.NewDense(cma.Dim(), 1, nil)
 	A := inductionMatrix
