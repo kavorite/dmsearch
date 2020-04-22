@@ -106,7 +106,7 @@ type Oneshot struct {
 	SampleCount int
 }
 
-func (cma *Oneshot) Add(v Vec) (result Vec) {
+func (cma *Oneshot) Add(v Vec) {
 	if v == nil {
 		return
 	}
@@ -118,7 +118,6 @@ func (cma *Oneshot) Add(v Vec) (result Vec) {
 	u := cma.ToBlas()
 	blas32.Axpy(1, u, v.ToBlas())
 	cma.SampleCount++
-	result = cma.Vec
 	return
 }
 
