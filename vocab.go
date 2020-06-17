@@ -15,9 +15,18 @@ type Vec []float32
 // Sim is the cosine similarity between two word vectors. Higher is more
 // similar.
 func (v Vec) Sim(u Vec) float32 {
+	if len(u) != len(v) {
+		return 0
+	}
 	uBlas, vBlas := u.ToBlas(), v.ToBlas()
 	a, b := blas32.Nrm2(uBlas), blas32.Nrm2(vBlas)
 	return blas32.Dot(uBlas, vBlas) / a / b
+}
+
+func (v Vec) Scale(alpha float32) Vec {
+	u := v.ToBlas()
+	blas32.Scal(alpha, u)
+	return v
 }
 
 func (v Vec) AtVec(i int) float64 {
@@ -151,8 +160,11 @@ type ALaCarte struct {
 }
 
 func (eb *ALaCarte) Advance(t string) (p bool) {
+	if !eb.Lexer.Advance(t) {
+		return false
+	}
 	eb.Oneshot.Add(eb.Embed(t))
-	return eb.Lexer.Advance(t)
+	return true
 }
 
 func (eb *ALaCarte) Finalize() (x Vec) {

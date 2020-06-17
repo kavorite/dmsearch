@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,11 +40,13 @@ func (spl *Prism) Slide(s *dgo.Session) (distillation *Lens, err error) {
 	err = spl.Unroll(s, func(msg *dgo.Message) bool {
 		bytec += len([]byte(msg.Content))
 		msgid, _ := snowflake.Parse(msg.ID)
+		blob := strings.Builder{}
 		// TODO: find out why this doesn't work for ngrams with widths smaller
 		// than two
-		tr.Ingest(3, msg.ContentWithMentionsReplaced())
+		fmt.Fprintf(&blob, "%s\n\n", msg.ContentWithMentionsReplaced())
 		Lex(&eb, msg.ContentWithMentionsReplaced())
 		if eb.SampleCount >= spl.Width {
+			tr.Ingest(3, blob.String())
 			scoredTokens, scoredPhrases := tr.Finalize()
 			for _, t := range scoredTokens {
 				eb.Add(eb.Embed(t.Tokens[0]).Scale(float32(t.Weight)))
