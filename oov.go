@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
-	"sort"
 	"time"
 
 	"github.com/james-bowman/sparse"
@@ -33,9 +31,11 @@ func NewCoocSpanner(span, vocab int, lexer Lexer) *CoocSpanner {
 	}
 }
 
-func (spanner *CoocSpanner) Advance(t string) (p bool) {
+func (spanner *CoocSpanner) Advance(t string) bool {
 	t = spanner.Sanitize(t)
-	p = spanner.Spanner.Advance(t)
+	if !spanner.Spanner.Advance(t) {
+		return false
+	}
 	if _, ok := spanner.Dict[t]; !ok {
 		spanner.Dict[t] = len(spanner.Dict)
 		spanner.Vocab = append(spanner.Vocab, t)
@@ -50,7 +50,7 @@ func (spanner *CoocSpanner) Advance(t string) (p bool) {
 			}
 		}
 	}
-	return
+	return true
 }
 
 func (spanner *CoocSpanner) PMI() (A *sparse.DOK) {
@@ -132,135 +132,4 @@ func (spanner *CoocSpanner) TextRank(e, d float64) []float64 {
 	}
 	v.Scale(1/mat.Sum(v), v)
 	return mat.VecDenseCopyOf(v.ColView(0)).RawVector().Data
-}
-
-type RakeSpanner struct {
-	*CoocSpanner
-	Vocab
-	Stops    BOW
-	Phrases  [][]string
-	phrase   []string
-	Adjoined map[[3]string]float64
-	OOV      map[string]*Oneshot
-}
-
-func NewRakeSpanner(span int, vocab Vocab, lexer Lexer, stops []string) *RakeSpanner {
-	return &RakeSpanner{
-		CoocSpanner: NewCoocSpanner(span, 1024, lexer),
-		Stops: BOW{
-			Dict:      make(map[string]struct{}, 1024),
-			Sanitizer: lexer,
-		},
-		OOV:      make(map[string]*Oneshot, 1024),
-		Phrases:  make([][]string, 0, 1024),
-		Adjoined: make(map[[3]string]float64, 1024),
-		Vocab:    vocab,
-	}
-}
-
-type Phrase []string
-
-func (phrase Phrase) Append(t string) {
-	if phrase == nil {
-		phrase = []string{t}
-		return
-	}
-	phrase = append(phrase, t)
-}
-
-func (spanner *RakeSpanner) Embed(t string) (v Vec) {
-	t = spanner.Sanitize(t)
-	v = spanner.Vocab.Embed(t)
-	if _, ok := spanner.OOV[t]; v == nil && ok {
-		v = spanner.OOV[t].Finalize()
-	}
-	return
-}
-
-func (spanner *RakeSpanner) Advance(t string) (p bool) {
-	t = spanner.Sanitize(t)
-	p = spanner.CoocSpanner.Advance(t)
-	// adjoint phrases
-	stops := &spanner.Stops
-	for i := 1; i < len(spanner.Context)-1; i++ {
-		l := spanner.Context[i-1]
-		t := spanner.Context[i]
-		w := spanner.Context[i+1]
-		if stops.Has(l) || !stops.Has(t) || stops.Has(w) {
-			continue
-		}
-		adjoint := [3]string{l, t, w}
-		if _, ok := spanner.Adjoined[adjoint]; !ok {
-			spanner.Adjoined[adjoint] = 0
-		}
-		spanner.Adjoined[adjoint]++
-	}
-	if len(spanner.Context) > 2 {
-		center := len(spanner.Context) / 2
-		w := spanner.Context[center]
-		if spanner.Vocab.Embed(w) == nil {
-			if _, ok := spanner.OOV[w]; !ok {
-				spanner.OOV[w] = &Oneshot{}
-			}
-			ctx := spanner.Context
-			for _, l := range append(ctx[:center], ctx[center+1:]...) {
-				spanner.OOV[w].Add(spanner.Embed(l))
-			}
-		}
-	}
-	w := spanner.Context[0]
-	if !stops.Has(w) {
-		if spanner.phrase == nil {
-			spanner.phrase = make([]string, spanner.Span)
-		}
-		spanner.phrase = append(spanner.phrase, w)
-	} else {
-		spanner.phrase = nil
-		spanner.Phrases = append(spanner.Phrases, spanner.phrase)
-	}
-	return
-}
-
-type ScoredPhrase struct {
-	Phrase
-	Score float64
-}
-
-func (spanner *RakeSpanner) ScoredPhrases() (scored []*ScoredPhrase) {
-	rankVec := spanner.TextRank(1e-3, 0.15)
-	rankDict := make(map[string]float64, len(rankVec))
-	spmi := spanner.SPMI()
-	for i, t := range spanner.CoocSpanner.Vocab {
-		rankDict[t] = rankVec[i]
-	}
-	phrases := spanner.Phrases
-	scored = make([]*ScoredPhrase, 0, len(phrases))
-	for _, phrase := range phrases {
-		if len(phrase) == 0 {
-			continue
-		}
-		t := phrase[0]
-		score := rankDict[t]
-		if len(phrase) > 1 {
-			i := spanner.Dict[t]
-			for _, w := range phrase[1:] {
-				j := spanner.Dict[w]
-				score += spmi.At(i, j)
-			}
-			score /= float64(len(phrase) - 1)
-		}
-		ent := &ScoredPhrase{phrase, score}
-		scored = append(scored, ent)
-	}
-	for adjoint, frequency := range spanner.Adjoined {
-		score := rankDict[adjoint[0]]
-		score += rankDict[adjoint[2]]
-		score *= math.Log(frequency + 1)
-		ent := &ScoredPhrase{adjoint[:], score}
-		scored = append(scored, ent)
-	}
-	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].Score > scored[j].Score
-	})
-	return
 }

@@ -10,14 +10,15 @@ import (
 )
 
 func Lex(lexer Lexer, src string) error {
-	return LexStrm(lexer, strings.NewReader(src))
+	rd := strings.NewReader(src)
+	return LexStrm(lexer, rd)
 }
 
 func LexStrm(lexer Lexer, istrm io.Reader) (err error) {
 	t := ""
 	_, err = fmt.Fscanf(istrm, "%s ", &t)
 	t = lexer.Sanitize(t)
-	if err != nil || (t != "" && !lexer.Advance(t)) {
+	if err != nil || !lexer.Advance(t) {
 		return
 	}
 	err = LexStrm(lexer, istrm)
@@ -93,9 +94,12 @@ func NewSpanner(span int, lexer Lexer) *Spanner {
 }
 
 func (spanner *Spanner) Advance(t string) bool {
+	if !spanner.Lexer.Advance(t) {
+		return false
+	}
 	spanner.Context = append(spanner.Context, spanner.Sanitize(t))
 	if len(spanner.Context) > spanner.Span {
 		spanner.Context = spanner.Context[1:]
 	}
-	return spanner.Lexer.Advance(t)
+	return true
 }

@@ -20,32 +20,38 @@ type Prism struct {
 type Lens struct {
 	time.Time
 	Vec
-	KeyPhrases    []*ScoredPhrase
+	KeyPhrases    []ScoredPhrase
+	KeyWords      []ScoredPhrase
 	ChID          string
 	ContentLength int
 }
 
 func (spl *Prism) Slide(s *dgo.Session) (distillation *Lens, err error) {
 	eb := ALaCarte{
-		Lexer: &CountLex{
-			Max:            spl.Width,
-			SanitizerChain: SanitizerChain{StripPunct, ToLower},
+		Lexer: &PassLex{
+			SanitizerChain{StripPunct, ToLower},
 		},
 		Vocab: spl.Vocab,
 	}
 	bytec := 0
-	spanner := NewRakeSpanner(5, &eb, &eb, nltkStops)
+	tr := RAKE{}
 	err = spl.Unroll(s, func(msg *dgo.Message) bool {
-		Lex(spanner, msg.Content)
 		bytec += len([]byte(msg.Content))
 		msgid, _ := snowflake.Parse(msg.ID)
+		tr.Ingest(3, msg.ContentWithMentionsReplaced())
+		Lex(&eb, msg.ContentWithMentionsReplaced())
 		if eb.SampleCount >= spl.Width {
+			scoredTokens, scoredPhrases := tr.Finalize()
+			for _, t := range scoredTokens {
+				eb.Add(eb.Embed(t.Tokens[0]).Scale(float32(t.Weight)))
+			}
 			distillation = &Lens{
 				Time:          msgid.Time(),
 				ContentLength: bytec,
 				Vec:           eb.Finalize(),
 				ChID:          msg.ChannelID,
-				KeyPhrases:    spanner.ScoredPhrases(),
+				KeyPhrases:    scoredPhrases,
+				KeyWords:      scoredTokens,
 			}
 			return false
 		}

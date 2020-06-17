@@ -76,7 +76,7 @@ func main() {
 	flag.StringVar(&token, "T", "", "Discord authentication token")
 	flag.StringVar(&datamass, "B", "8k", "datamass to retrieve from each channel in units of [K]iB, [M]iB, and [G]iB")
 	flag.StringVar(&wordpath, "vocab", "", "path to word2vec embeddings")
-	flag.UintVar(&docsize, "doc", 128, "number of lexical units to include in a single content-block")
+	flag.UintVar(&docsize, "doc", 512, "number of lexical units to include in a single content-block")
 	flag.Parse()
 	if token == "" {
 		token = os.Getenv("DMSEARCH_TOKEN")
@@ -134,11 +134,11 @@ func main() {
 	bar = pb.New(len(dms) * maxbytec)
 	for _, dm := range dms {
 		dmsById[dm.ID] = dm
+		workerlk.Rsrv(1)
 		go func(target *dgo.Channel) {
 			defer indexing.Done()
 			defer workerlk.Free(1)
 			bytec := 0
-			workerlk.Rsrv(1)
 			spool := &spool.T{ChID: target.ID}
 			for bytec < maxbytec {
 				lens, err := index.Hydrate(client, spool, int(docsize))
@@ -176,20 +176,18 @@ func main() {
 		results = results[:k]
 		fmt.Printf("Found %d hit(s):\n", len(results))
 		for _, r := range results {
-			recipients := make([]string, 0, len(dmsById[r.ChID].Recipients))
+			recipients := []string{"nobody"}
 			if len(dmsById[r.ChID].Recipients) != 0 {
+				recipients = make([]string, 0, len(dmsById[r.ChID].Recipients))
 				for _, u := range dmsById[r.ChID].Recipients {
 					recipients = append(recipients, u.String())
 				}
 			}
 			keyphrases := make([]string, 0, 3)
-			for i, phrase := range r.KeyPhrases {
-				s := strings.Join(phrase.Phrase, " ")
+			for _, phrase := range r.KeyPhrases {
+				s := strings.Join(phrase.Tokens, " ")
 				s = fmt.Sprintf(`"%s"`, s)
 				keyphrases = append(keyphrases, s)
-				if i >= 2 {
-					break
-				}
 			}
 			fmt.Printf("%s; %s: %s\n",
 				r.Time.Format("Jan 02 '06 15:04:05"),

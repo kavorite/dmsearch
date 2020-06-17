@@ -2,10 +2,29 @@ package main
 
 import (
 	"math"
+	"unicode"
 
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 	"gonum.org/v1/gonum/blas/blas32"
 	"gonum.org/v1/gonum/mat"
 )
+
+func isMn(r rune) bool {
+	return unicode.Is(unicode.Mn, r)
+}
+
+var normalizeTransform = transform.Chain(norm.NFD, transform.RemoveFunc(isMn), norm.NFC)
+
+func normalize(s string) string {
+	defer func() {
+		if r := recover(); r != nil {
+			s = ""
+		}
+	}()
+	s, _, _ = transform.String(normalizeTransform, s)
+	return s
+}
 
 type TfIdf struct {
 	tf, df       map[string]int
@@ -80,6 +99,15 @@ type BOW struct {
 	Sanitizer
 }
 
+func Bag(of ...string) BOW {
+	sanitizer := SanitizerChain{StripPunct, ToLower}
+	bag := make(map[string]struct{}, len(of))
+	for _, t := range of {
+		bag[t] = struct{}{}
+	}
+	return BOW{bag, sanitizer}
+}
+
 func (bag *BOW) Advance(t string) bool {
 	if bag.Dict == nil {
 		bag.Dict = make(map[string]struct{}, 1024)
@@ -115,8 +143,7 @@ func (cma *Oneshot) Add(v Vec) {
 		copy(cma.Vec, v)
 		return
 	}
-	u := cma.ToBlas()
-	blas32.Axpy(1, u, v.ToBlas())
+	blas32.Axpy(1, cma.Vec.ToBlas(), v.ToBlas())
 	cma.SampleCount++
 	return
 }
