@@ -38,6 +38,8 @@ func (spl *Prism) Slide(s *dgo.Session) (distillation *Lens, err error) {
 	err = spl.Unroll(s, func(msg *dgo.Message) bool {
 		bytec += len([]byte(msg.Content))
 		msgid, _ := snowflake.Parse(msg.ID)
+		// TODO: find out why this doesn't work for ngrams with widths smaller
+		// than two
 		tr.Ingest(3, msg.ContentWithMentionsReplaced())
 		Lex(&eb, msg.ContentWithMentionsReplaced())
 		if eb.SampleCount >= spl.Width {

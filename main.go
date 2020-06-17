@@ -184,6 +184,8 @@ func main() {
 				}
 			}
 			keyphrases := make([]string, 0, 3)
+			// TODO: sort keyphrases by relevance to the query to make a kind
+			// of "highlights" system
 			for _, phrase := range r.KeyPhrases {
 				s := strings.Join(phrase.Tokens, " ")
 				s = fmt.Sprintf(`"%s"`, s)
