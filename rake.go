@@ -8,7 +8,7 @@ import (
 )
 
 // NLTK-generated list of stop-words
-var stops = []string{
+var nltkStops = []string{
 	"i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you",
 	"you're", "you've", "you'll", "you'd", "your", "yours", "yourself",
 	"yourselves", "he", "him", "his", "himself", "she", "she's", "her", "hers",
